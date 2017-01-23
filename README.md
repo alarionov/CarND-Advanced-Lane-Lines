@@ -1,21 +1,8 @@
-## Advanced Lane Finding
-[![Udacity - Self-Driving Car NanoDegree](https://s3.amazonaws.com/udacity-sdc/github/shield-carnd.svg)](http://www.udacity.com/drive)
+# Advanced Lane Finding Project
 
+The goal of this project is to build a software pipeline to identify the lane boundaries in a video.
 
-In this project, your goal is to write a software pipeline to identify the lane boundaries in a video, but the main output or product we want you to create is a detailed writeup of the project.  Check out the [writeup template](https://github.com/udacity/CarND-Advanced-Lane-Lines/blob/master/writeup_template.md) for this project and use it as a starting point for creating your own writeup.  
-
-Creating a great writeup:
----
-A great writeup should include the rubric points as well as your description of how you addressed each point.  You should include a detailed description of the code used in each step (with line-number references and code snippets where necessary), and links to other supporting documents or external references.  You should include images in your writeup to demonstrate how your code works with examples.  
-
-All that said, please be concise!  We're not looking for you to write a book here, just a brief description of how you passed each rubric point, and references to the relevant code :). 
-
-You're not required to use markdown for your writeup.  If you use another method please just submit a pdf of your writeup.
-
-The Project
----
-
-The goals / steps of this project are the following:
+The pipeline will contain following steps:
 
 * Compute the camera calibration matrix and distortion coefficients given a set of chessboard images.
 * Apply a distortion correction to raw images.
@@ -26,8 +13,88 @@ The goals / steps of this project are the following:
 * Warp the detected lane boundaries back onto the original image.
 * Output visual display of the lane boundaries and numerical estimation of lane curvature and vehicle position.
 
-The images for camera calibration are stored in the folder called `camera_cal`.  The images in `test_images` are for testing your pipeline on single frames.  To help the reviewer examine your work, please save examples of the output from each stage of your pipeline in the folder called `ouput_images`, and include a description in your writeup for the project of what each image shows.    The video called `project_video.mp4` is the video your pipeline should work well on.  
+Results of every step can be found [here](Research.ipynb)
 
-The `challenge_video.mp4` video is an extra (and optional) challenge for you if you want to test your pipeline under somewhat trickier conditions.  The `harder_challenge.mp4` video is another optional challenge and is brutal!
+Video can be found [here](https://www.youtube.com/watch?v=UJmm_oLm6lk)
 
-If you're feeling ambitious (again, totally optional though), don't stop there!  We encourage you to go out and take video of your own, calibrate your camera and show us how you would implement this project from scratch!
+## Camera calibration and correction for distortion
+
+Images for camera calibration can be found [here](camera_cal/)
+
+To calibrate the camera we will use `findChessboardCorners` and `calibrateCamera` functions from OpenCV. [cell#2-8]
+
+Example of correction for distortion:
+
+![example of correction for distortion](output_images/example_undist.jpg)
+
+After we calibrated the camera we can apply a distortion correction to [test images](test_images/) to get [undistorted images](output_images/) [cell#9]
+![example of correction for distortion](output_images/example_undist_test_images.jpg)
+
+## Line detection
+Now we need to find lines on the image, for that we will use following steps:
+
+* Improve contrast in the image with [CLAHE](https://en.wikipedia.org/wiki/Adaptive_histogram_equalization) [cell#25]
+* Extract white pixels from RGB image [cell#15]
+* Extract yellow pixels from HSV image [cell#16]
+* Combine white and yellow pixels [cell#17]
+* Extract region of interest from combined image [cell#12]
+* Perform Perspective Transformation [cell#30-31]
+
+Result:
+
+![first steps](output_images/first_4_steps.jpg)
+
+Parameters for perspective transformation
+
+| Source        | Destination   |
+|:-------------:|:-------------:|
+|  475, 548     | 350, 600      |
+|  875, 548     | 940, 600      |
+| 1200, 712     | 940, 720      |
+|  250, 712     | 350, 720      |
+
+* Find centers of the lines [cell#13]
+* Extract pixels for the lines [cell#14]
+* Calculate coefficients for the lines [cell#19]
+
+Estimated lines:
+
+![estimated lines](output_images/line_centers.jpg)
+
+* Fill a polygon using lines and undo perspective transformation [cell#38]
+* Add information about the line curvature and deviation from the center [cell#39]
+
+Result:
+
+![result](output_images/result.jpg)
+
+Video can be found [here](https://www.youtube.com/watch?v=UJmm_oLm6lk)
+
+After all experiments, we can combine all steps into a python module for line detection: `advance_lane_finding.py`
+
+This is how we can process a video with new module:
+```
+import advance_lane_finding as alf
+
+# camera calibration
+
+clb = alf.CameraCalibrator((1280, 720))
+clb.load_images('camera_cal/*.jpg')
+clb.match_points(9, 6)
+clb.calibrate()
+
+lf     = alf.LaneFinder((1280, 720), clb)
+clip   = VideoFileClip('project_video.mp4')
+output = clip.fl_image(lf.process_image)
+output.write_videofile('output_video/project_video.mp4', audio=False)
+```
+
+## Discussion
+
+After we've built the pipeline and process the video, we can disscuss what problems we faced in the process.
+
+One of them is lines in the middle of the lane, which can lead to false detection of lines centers. To avoid it, we remove a middle of the histogram from the scan.
+
+Another problem is a noise added by shadows and other cars close to lines, which can affect directions of detected lines. For this, we scan only a limited horizontal window, so center of mass couldn't change too fast.
+
+Though the solution is quite stable on presented video, deeply curved roads and other vehicles on the lanes still can cause a problem. It might be more beneficial to use current solution for generating labeled data for training a deep neural network for lane detection.
